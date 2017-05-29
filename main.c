@@ -2,33 +2,42 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <unistd.h>
 
-struct chunk {
-	uint32_t sec;
-	uint32_t usec;
+#include <sys/time.h>
+
+struct header {
+	struct timeval tv;
 	uint32_t len;
-	char* payload;
-
-	struct chunk* next;
 };
 
-struct chunk* chunk_create() {
-	struct chunk* e = malloc(sizeof(struct chunk));
-	e->payload = NULL;
-	e->next = NULL;
-	return e;
-}
+struct timeval diff(struct timeval t1, struct timeval t2) {
+	struct timeval d;
+	d.tv_sec  = t2.tv_sec  - t1.tv_sec;
+	d.tv_usec = t2.tv_usec - t1.tv_usec;
 
-void chunk_free(struct chunk* c) {
-	while(c != NULL) {
-		struct chunk* next = c->next;
-		free(c->payload);
-		free(c);
-		c = next;
+	if (d.tv_usec < 0) {
+		d.tv_sec--;
+		d.tv_usec += 1000000;
 	}
+	return d;
 }
 
-const int CHUNK_HEADER_SIZE = 12;
+
+int read_header(FILE* fp, struct header* h) {
+	//uint32_t b[3];
+	uint32_t b[3];
+
+	if ((fread(b, sizeof(uint32_t), 3, fp)) == 0) {
+		return 0;
+	}
+
+	h->tv.tv_sec  = b[0];
+	h->tv.tv_usec = b[1];
+	h->len  = b[2];
+
+	return 1;
+}
 
 int main(int argc, char* argv[]) {
 	FILE* f = fopen("ttyrecord", "r");
@@ -37,54 +46,38 @@ int main(int argc, char* argv[]) {
 		exit(1);
 	}
 
-	int i = 0;
-	int chunkheader[CHUNK_HEADER_SIZE];
+	fd_set rfds;
 
-	bool newtoken = true;
-	int read;
+	bool first = true;
 
-	// head of the linked list
-	struct chunk* head = chunk_create();
-	struct chunk* current = head;
+	struct timeval prev;
+	prev.tv_sec = 0;
+	prev.tv_usec = 0;
 
-	while ((read = fgetc(f)) != EOF) {
-		chunkheader[i] = read;
-		i++;
+	struct header h;
+	int x;
+	while ((x = read_header(f, &h)) == 1) {
+		//printf("header: %d, %6d, %5d\n", (uint32_t) h.tv.tv_sec, (uint32_t) h.tv.tv_usec, h.len);
 
-		if (i >= CHUNK_HEADER_SIZE) {
-			// parse the header
-			int sec  = (chunkheader[3]  << 24) | (chunkheader[2]  << 16) | (chunkheader[1] << 8) | (chunkheader[0]);
-			int usec = (chunkheader[7]  << 24) | (chunkheader[6]  << 16) | (chunkheader[5] << 8) | (chunkheader[4]);
-			int len  = (chunkheader[11] << 24) | (chunkheader[10] << 16) | (chunkheader[9] << 8) | (chunkheader[8]);
-			i = 0;
+		char* contents = malloc(h.len * sizeof(char));
+		fread(contents, sizeof(char), h.len, f);
 
-			char* payload = malloc(len * sizeof(char));
-			for (int x = 0; x < len; x++) {
-				payload[x] = (char) fgetc(f);
-			}
+		if (!first) {
+			struct timeval tvdiff = diff(prev, h.tv);
 
-			current->sec = sec;
-			current->usec = usec;
-			current->len = len;
-			current->payload = payload;
-
-			struct chunk* next = chunk_create();
-			current->next = next;
-			current = next;
+			select(1, &rfds, NULL, NULL, &tvdiff);
 		}
+		write(STDOUT_FILENO, contents, h.len);
+		first = false;
+
+		prev = h.tv;
+		free(contents);
+
+		// skip len bytes
+		//fseek(f, h.len, SEEK_CUR);
 	}
 
 	fclose(f);
-
-	struct chunk* iter = head;
-	while (iter != NULL) {
-		if (iter->len > 0) {
-			printf("%s", iter->payload);
-		}
-		iter = iter->next;
-	}
-
-	chunk_free(head);
 
 	printf("\nEND OF RECORDING\n");
 }
