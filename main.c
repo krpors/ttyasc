@@ -85,6 +85,16 @@ struct asciicast_frame* asciicast_frame_init(float delay, const char* what, int 
 	for(int i = 0; i < len; i++) {
 		char c = what[i];
 		if (isprint(c)) {
+			if (c == '"') {
+				// escape a double quote to prevent premature json termination.
+				string_append(frame->contents, "\\\"", 2);
+				continue;
+			}
+			if (c == '\\') {
+				string_append(frame->contents, "\\\\", 2);
+				continue;
+			}
+
 			// printable characters can be appended as-is.
 			char filler[1];
 			filler[0] = c;
@@ -95,9 +105,6 @@ struct asciicast_frame* asciicast_frame_init(float delay, const char* what, int 
 		} else if (c == '\n') {
 			// linefeeds can be escaped as \n
 			string_append(frame->contents, "\\n", 2);
-		} else if (c == '"') {
-			// escape a double quote to prevent premature json termination.
-			string_append(frame->contents, "\\\"", 2);
 		} else {
 			// all other characters are assumed to be non-printable, and are escaped
 			// using a \uxxxx sequence to adhere to JSON format.
@@ -105,42 +112,23 @@ struct asciicast_frame* asciicast_frame_init(float delay, const char* what, int 
 			string_append(frame->contents, derp, 6);
 		}
 	}
-	printf("Content len: %d, cap: %d, contents = \n", frame->contents->len, frame->contents->cap);
-	printf("%s", frame->contents->contents);
-	printf("\n");
+
+	//printf("Content len: %d, cap: %d, contents = \n", frame->contents->len, frame->contents->cap);
+	//printf("%s", frame->contents->contents);
+	//printf("\n");
 
 	return frame;
 }
 
 void asciicast_frame_free(struct asciicast_frame* frame) {
-	string_free(frame->contents);
-	free(frame);
-}
-
-struct asciicast {
-	int    version;
-	int    width;
-	int    height;
-	float  duration;
-	char*  command;
-	char*  title;
-	//char** env;
-
-	struct asciicast_frame* frame;
-};
-
-struct asciicast* asciicast_init() {
-	struct asciicast* ac = malloc(sizeof(struct asciicast));
-
-	ac->version  = 1;
-	ac->width    = 80; // XXX: cannot determine width from ttyrec
-	ac->height   = 24; // XXX: cannot determine height from ttyrec
-	ac->duration = 0;
-	ac->command  = malloc(80 * sizeof(char));
-	ac->title    = malloc(80 * sizeof(char));
-	ac->frame    = NULL;
-
-	return ac;
+	struct asciicast_frame* p = frame;
+	while (p != NULL) {
+		struct asciicast_frame* temp = p;
+		p = p->next;
+		string_free(temp->contents);
+		printf("Freeing %f\n", temp->delay);
+		free(temp);
+	}
 }
 
 /*
@@ -233,6 +221,9 @@ int main(int argc, char* argv[]) {
 	prev.tv_sec = 0;
 	prev.tv_usec = 0;
 
+	struct asciicast_frame* frame_head = NULL;
+	struct asciicast_frame* frame_current = NULL;
+
 	while (true) {
 		struct ttyrec_frame* h = ttyrec_frame_read(f);
 		if (h == NULL) {
@@ -244,20 +235,24 @@ int main(int argc, char* argv[]) {
 			struct timeval tvdiff = diff(&prev, &h->tv);
 			timediff = tvdiff.tv_sec + (tvdiff.tv_usec / 1e6);
 			totaltime += timediff;
-
-			struct asciicast_frame* frame = asciicast_frame_init(timediff, h->buf, h->len);
-			//printf("%s\n", frame->contents->contents);
-			asciicast_frame_free(frame);
-			//struct string* s = string_init();
-			//do_trick(s, h->buf, h->len);
-			//string_free(s);
 			//select(1, &rfds, NULL, NULL, &tvdiff);
 		} else {
 			first = false;
 		}
 
-		printf("Diff, %f\n", timediff);
-		printf("================================================\n");
+		struct asciicast_frame* next = asciicast_frame_init(timediff, h->buf, h->len);
+		if (frame_current == NULL) {
+			frame_head = next;
+		} else {
+			frame_current->next = next;
+		}
+
+		frame_current = next;
+
+		//asciicast_frame_free(next);
+
+		//printf("Diff, %f\n", timediff);
+		//printf("================================================\n");
 		//write(STDOUT_FILENO, contents, h.len);
 
 		prev.tv_sec = h->tv.tv_sec;
@@ -267,7 +262,31 @@ int main(int argc, char* argv[]) {
 	}
 
 	fclose(f);
+	// 167920
 
-	printf("\nEND OF RECORDING\n");
-	printf("Total time: %f\n", totaltime);
+	printf("{\n");
+
+	struct asciicast_frame* p = frame_head;
+	printf("\t\"version\": 1,\n");
+	printf("\t\"width\": 80,\n");
+	printf("\t\"height\": 24,\n");
+	printf("\t\"duration\": 1,\n");
+	printf("\t\"command\": 1,\n");
+	printf("\t\"title\": 1,\n");
+	printf("\t\"stdout\": [\n");
+	while(p != NULL) {
+		printf("\t\t[\n");
+		printf("\t\t\t%f,\n", p->delay);
+		printf("\t\t\t\"%s\"\n", p->contents->contents);
+
+		if (p->next == NULL) {
+			printf("\t\t]\n");
+			break;
+		}
+
+		printf("\t\t],\n");
+		p = p->next;
+	}
+	printf("\t]\n");
+	printf("}");
 }
