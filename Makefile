@@ -1,5 +1,5 @@
 all:
-	gcc main.c -o main
+	gcc -ggdb main.c -o main
 
 .PHONY: clean
 clean:
