@@ -1,6 +1,9 @@
 all:
-	gcc -ggdb main.c -o main
+	gcc -ggdb ttyasc.c -o ttyasc
+
+static:
+	gcc ttyasc.c -static -o ttyasc
 
 .PHONY: clean
 clean:
-	rm main
+	rm ttyasc
