@@ -9,129 +9,6 @@
 #include <sys/time.h>
 
 /*
- * ============================================================================
- * dynamic growable string buffer.
- * ============================================================================
- */
-
-struct string {
-	char* contents;
-	uint32_t len;
-	uint32_t cap;
-};
-
-struct string* string_init() {
-	struct string* s = malloc(sizeof(struct string));
-	s->cap = 20;
-	s->len = 0;
-	s->contents = calloc(s->cap, sizeof(char));
-	return s;
-}
-
-void string_free(struct string* s) {
-	if (s == NULL) {
-		return;
-	}
-
-	if (s->contents != NULL) {
-		free(s->contents);
-	}
-
-	free(s);
-}
-
-void string_append(struct string* s, const char* what, int len) {
-	if (s->len + len >= s->cap) {
-		s->cap += len;
-		s->cap *= 2;
-		s->contents = realloc(s->contents, s->cap);
-		if (s->contents == NULL) {
-			perror("Unable to reallocate for string buffer)");
-			exit(1);
-		}
-	}
-	
-	memcpy(s->contents + s->len, what, len);
-	s->len += len;
-	memset(s->contents + s->len, '\0', s->cap - s->len);
-}
-
-/*
- * ============================================================================
- * asciicast frame functions.
- * ============================================================================
- */
-
-/*
- * A single frame in asciicast format. Contains a pointer to a probable next 
- * frame, or NULL if this is the last one.
- */
-struct asciicast_frame {
-	float delay;
-	struct string* contents;
-	struct asciicast_frame* next;
-};
-
-struct asciicast_frame* asciicast_frame_init(float delay, const char* what, int len) {
-	struct asciicast_frame* frame = malloc(sizeof(struct asciicast_frame));
-
-	frame->delay    = delay;
-	frame->next     = NULL;
-
-	// Iterate over the `what' character array (can contain 0 bytes), and escape
-	// and append accordingly into the string buffer.
-	frame->contents = string_init();
-	char derp[6 + 1];
-	for(int i = 0; i < len; i++) {
-		char c = what[i];
-		if (isprint(c)) {
-			if (c == '"') {
-				// escape a double quote to prevent premature json termination.
-				string_append(frame->contents, "\\\"", 2);
-				continue;
-			}
-			if (c == '\\') {
-				string_append(frame->contents, "\\\\", 2);
-				continue;
-			}
-
-			// printable characters can be appended as-is.
-			char filler[1];
-			filler[0] = c;
-			string_append(frame->contents, filler, 1);
-		} else if (c == '\r') {
-			// carriage returns can be escaped as \r
-			string_append(frame->contents, "\\r", 2);
-		} else if (c == '\n') {
-			// linefeeds can be escaped as \n
-			string_append(frame->contents, "\\n", 2);
-		} else {
-			// all other characters are assumed to be non-printable, and are escaped
-			// using a \uxxxx sequence to adhere to JSON format.
-			snprintf(derp, 7, "\\u%04x", c);
-			string_append(frame->contents, derp, 6);
-		}
-	}
-
-	//printf("Content len: %d, cap: %d, contents = \n", frame->contents->len, frame->contents->cap);
-	//printf("%s", frame->contents->contents);
-	//printf("\n");
-
-	return frame;
-}
-
-void asciicast_frame_free(struct asciicast_frame* frame) {
-	struct asciicast_frame* p = frame;
-	while (p != NULL) {
-		struct asciicast_frame* temp = p;
-		p = p->next;
-		string_free(temp->contents);
-		printf("Freeing %f\n", temp->delay);
-		free(temp);
-	}
-}
-
-/*
  * Calculates the difference between timevals t1 and t2, by subtracting the fields
  * of t2 with t1. A new timeval struct is returned on the stack.
  */
@@ -166,18 +43,16 @@ struct ttyrec_frame {
 
 /*
  * Reads a ttyrec header entry from the file `fp'. and stores the contents in the
- * struct `h'. Will return `0' if the end of file is reached, or 1 if otherwise.
+ * struct `f'. Will return `0' if the end of file is reached, or 1 if otherwise.
  * The seek pointer will be increased by calling this function.
  */
-struct ttyrec_frame* ttyrec_frame_read(FILE* fp) {
-	struct ttyrec_frame* f = malloc(sizeof(struct ttyrec_frame));
-
+int ttyrec_frame_read(FILE* fp, struct ttyrec_frame* f) {
 	uint32_t b[3];
 
 	// first, read the three integers: the seconds, milliseconds and the size
 	// of the ttyrec chunk.
 	if ((fread(b, sizeof(uint32_t), 3, fp)) == 0) {
-		return NULL;
+		return 0;
 	}
 
 	f->tv.tv_sec  = b[0];
@@ -187,18 +62,56 @@ struct ttyrec_frame* ttyrec_frame_read(FILE* fp) {
 
 	// Next, read f->len amount of bytes into f->buf.
 	if((fread(f->buf, sizeof(char), f->len, fp)) == 0) {
-		return NULL;
+		return 0;
 	}
 
-	return f;
+	return 1;
 }
 
 /*
  * Frees the frame, and the buffer contents.
  */
 void ttyrec_frame_free(struct ttyrec_frame* f) {
-	free(f->buf);
-	free(f);
+	if (f->buf != NULL) {
+		free(f->buf);
+		f->buf = NULL;
+	}
+	if (f != NULL) {
+		free(f);
+		f = NULL;
+	}
+}
+
+void ttyrec_frame_write(const struct ttyrec_frame* f) {
+	printf("\t\t\t\"");
+	for(int i = 0; i < f->len; i++) {
+		char c = f->buf[i];
+		if (isprint(c)) {
+			if (c == '"') {
+				// escape a double quote to prevent premature json termination.
+				printf("\\\"");
+				continue;
+			}
+			if (c == '\\') {
+				printf("\\\\");
+				continue;
+			}
+
+			// printable characters can be appended as-is.
+			printf("%c", c);
+		} else if (c == '\r') {
+			// carriage returns can be escaped as \r
+			printf("\\r");
+		} else if (c == '\n') {
+			// linefeeds can be escaped as \n
+			printf("\\n");
+		} else {
+			// all other characters are assumed to be non-printable, and are escaped
+			// using a \uxxxx sequence to adhere to JSON format.
+			printf("\\u%04x", c);
+		}
+	}
+	printf("\"");
 }
 
 /*
@@ -211,8 +124,6 @@ int main(int argc, char* argv[]) {
 		exit(1);
 	}
 
-	fd_set rfds;
-
 	bool first = true;
 
 	float totaltime = 0.0f;
@@ -221,12 +132,28 @@ int main(int argc, char* argv[]) {
 	prev.tv_sec = 0;
 	prev.tv_usec = 0;
 
-	struct asciicast_frame* frame_head = NULL;
-	struct asciicast_frame* frame_current = NULL;
+	// Poor man's JSON serializer. Just keeping it simple, stupid.
+	printf("{\n");
 
+	printf("\t\"version\": 1,\n");
+	printf("\t\"width\": 80,\n");
+	printf("\t\"height\": 24,\n");
+	printf("\t\"duration\": 1,\n");
+	printf("\t\"command\": 1,\n");
+	printf("\t\"title\": 1,\n");
+	printf("\t\"stdout\": [\n");
 	while (true) {
-		struct ttyrec_frame* h = ttyrec_frame_read(f);
-		if (h == NULL) {
+		struct ttyrec_frame* h = malloc(sizeof(struct ttyrec_frame));
+
+		if (ttyrec_frame_read(f, h) <= 0) {
+			// no more frames to read.
+			// TODO: im not happy with the malloc/free part. It looks a bit...
+			// fishy to say the least. Malloc inside loop, but if nothing
+			// can be read anymore, free it? All because I want to contain
+			// the information inside a struct! Too much OOP has clouded
+			// my mind... And too lazy right now to fix it so here you go.
+			ttyrec_frame_free(h);
+			printf("\n");
 			break;
 		}
 
@@ -235,58 +162,24 @@ int main(int argc, char* argv[]) {
 			struct timeval tvdiff = diff(&prev, &h->tv);
 			timediff = tvdiff.tv_sec + (tvdiff.tv_usec / 1e6);
 			totaltime += timediff;
-			//select(1, &rfds, NULL, NULL, &tvdiff);
+
+			printf(",\n");
 		} else {
 			first = false;
 		}
 
-		struct asciicast_frame* next = asciicast_frame_init(timediff, h->buf, h->len);
-		if (frame_current == NULL) {
-			frame_head = next;
-		} else {
-			frame_current->next = next;
-		}
-
-		frame_current = next;
-
-		//asciicast_frame_free(next);
-
-		//printf("Diff, %f\n", timediff);
-		//printf("================================================\n");
-		//write(STDOUT_FILENO, contents, h.len);
+		printf("\t\t[\n");
+		printf("\t\t\t%f,\n", timediff);
+		ttyrec_frame_write(h);
+		printf("\n\t\t]");
 
 		prev.tv_sec = h->tv.tv_sec;
 		prev.tv_usec = h->tv.tv_usec;
 
 		ttyrec_frame_free(h);
 	}
-
-	fclose(f);
-	// 167920
-
-	printf("{\n");
-
-	struct asciicast_frame* p = frame_head;
-	printf("\t\"version\": 1,\n");
-	printf("\t\"width\": 80,\n");
-	printf("\t\"height\": 24,\n");
-	printf("\t\"duration\": 1,\n");
-	printf("\t\"command\": 1,\n");
-	printf("\t\"title\": 1,\n");
-	printf("\t\"stdout\": [\n");
-	while(p != NULL) {
-		printf("\t\t[\n");
-		printf("\t\t\t%f,\n", p->delay);
-		printf("\t\t\t\"%s\"\n", p->contents->contents);
-
-		if (p->next == NULL) {
-			printf("\t\t]\n");
-			break;
-		}
-
-		printf("\t\t],\n");
-		p = p->next;
-	}
 	printf("\t]\n");
 	printf("}");
+
+	fclose(f);
 }
