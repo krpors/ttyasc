@@ -1,9 +1,15 @@
-all:
-	gcc -ggdb ttyasc.c -o ttyasc
+CPPFLAGS = -DNDEBUG
+CFLAGS = -std=c99 -Wall -Wextra -pedantic -O3 -MMD -MP
+#LDFLAGS = -O3
 
-static:
-	gcc ttyasc.c -static -o ttyasc
+objects := ttyasc.o
 
-.PHONY: clean
+all: ttyasc
+ttyasc: $(objects)
+
 clean:
-	rm ttyasc
+	$(RM) $(objects) $(objects:.o=.d) ttyasc
+
+-include $(objects:.o=.d);
+
+.PHONY: all clean
