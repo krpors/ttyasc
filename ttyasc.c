@@ -84,7 +84,7 @@ void ttyrec_frame_free(struct ttyrec_frame* f) {
 
 void ttyrec_frame_write(const struct ttyrec_frame* f) {
 	printf("\t\t\t\"");
-	for(int i = 0; i < f->len; i++) {
+	for (int i = 0; i < (int) f->len; i++) {
 		char c = f->buf[i];
 		if (isprint(c)) {
 			if (c == '"') {
@@ -152,7 +152,7 @@ int main(int argc, char* argv[]) {
 			// can be read anymore, free it? All because I want to contain
 			// the information inside a struct! Too much OOP has clouded
 			// my mind... And too lazy right now to fix it so here you go.
-			ttyrec_frame_free(h);
+			free(h);
 			printf("\n");
 			break;
 		}
