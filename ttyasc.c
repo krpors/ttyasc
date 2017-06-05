@@ -89,29 +89,17 @@ void ttyrec_frame_write(const struct ttyrec_frame* f) {
 	printf("\t\t\t\"");
 	for (int i = 0; i < (int) f->len; i++) {
 		char c = f->buf[i];
-		if (isprint(c)) {
-			if (c == '"') {
-				// escape a double quote to prevent premature json termination.
-				printf("\\\"");
-				continue;
-			}
-			if (c == '\\') {
-				printf("\\\\");
-				continue;
-			}
 
-			// printable characters can be appended as-is.
-			printf("%c", c);
-		} else if (c == '\r') {
-			// carriage returns can be escaped as \r
-			printf("\\r");
-		} else if (c == '\n') {
-			// linefeeds can be escaped as \n
-			printf("\\n");
-		} else {
-			// all other characters are assumed to be non-printable, and are escaped
-			// using a \uxxxx sequence to adhere to JSON format.
-			printf("\\u%04x", c);
+		switch (c) {
+		case '\b': printf("\\b");  break;
+		case '\f': printf("\\f");  break;
+		case '\n': printf("\\n");  break;
+		case '\r': printf("\\r");  break;
+		case '\t': printf("\\t");  break;
+		case '\\': printf("\\\\"); break;
+		case '"':  printf("\\\""); break;
+		case 0x1b: printf("\\u001b"); break;
+		default:   printf("%c", (unsigned char) c); break;
 		}
 	}
 	printf("\"");
