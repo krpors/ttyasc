@@ -5,6 +5,9 @@
 #include <string.h>
 #include <unistd.h>
 #include <ctype.h>
+#include <errno.h>
+
+#include <getopt.h>
 
 #include <sys/time.h>
 
@@ -114,13 +117,51 @@ void ttyrec_frame_write(const struct ttyrec_frame* f) {
 	printf("\"");
 }
 
+void print_help() {
+	fprintf(stderr,
+	"usage: ttyasc [-h] filename\n"
+	"\n"
+	"Command options:\n"
+	"    -h    Print this help and exits\n"
+	"\n"
+	"This program translates a `ttyrec' recorded file to the file format for\n"
+	"the asciinema terminal player, and blurts it out to the stdout.\n"
+	"\n"
+	"Report bugs to <krpors at gmail.com> or see <http://github.com/krpors/ttyasc>\n"
+	);
+}
+
 /*
  * Entry point!
  */
 int main(int argc, char* argv[]) {
-	FILE* f = fopen("ttyrecord", "r");
+	char* file = NULL;
+
+	int ch = 0;
+	while ((ch = getopt(argc, argv, "h")) != -1) {
+		switch (ch) {
+		case 'h':
+			print_help();
+			exit(0);
+			break;
+		default:
+			print_help();
+			exit(1);
+			break;
+		}
+	}
+
+	if (optind >= argc) {
+		fprintf(stderr, "error: expected one `ttyrec' recorded file\n");
+		exit(1);
+	}
+
+	file = argv[optind];
+
+
+	FILE* f = fopen(file, "r");
 	if (f == NULL) {
-		printf("Error opening file\n");
+		fprintf(stderr, "Unable to open file '%s': %s\n", file, strerror(errno));
 		exit(1);
 	}
 
@@ -138,7 +179,7 @@ int main(int argc, char* argv[]) {
 	printf("\t\"version\": 1,\n");
 	printf("\t\"width\": 80,\n");
 	printf("\t\"height\": 24,\n");
-	printf("\t\"duration\": 1,\n");
+	printf("\t\"duration\": 1,\n"); // FIXME: total duration time.
 	printf("\t\"command\": 1,\n");
 	printf("\t\"title\": 1,\n");
 	printf("\t\"stdout\": [\n");
