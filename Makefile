@@ -7,6 +7,9 @@ objects := ttyasc.o
 all: ttyasc
 ttyasc: $(objects)
 
+static: all
+static: LDFLAGS += -static
+
 clean:
 	$(RM) $(objects) $(objects:.o=.d) ttyasc
 
