@@ -90,17 +90,26 @@ void ttyrec_frame_write(const struct ttyrec_frame* f) {
 	for (int i = 0; i < (int) f->len; i++) {
 		char c = f->buf[i];
 
+		// Some special cases for JSON. Some characters can be used with
+		// backslash escapes, others (such as 0x1b etc.) cannot.
 		switch (c) {
-		case '\b': printf("\\b");  break;
-		case '\f': printf("\\f");  break;
-		case '\n': printf("\\n");  break;
-		case '\r': printf("\\r");  break;
-		case '\t': printf("\\t");  break;
-		case '\\': printf("\\\\"); break;
-		case '"':  printf("\\\""); break;
-		case 0x1b: printf("\\u001b"); break;
-		default:   printf("%c", (unsigned char) c); break;
+		case '\b': printf("\\b");  continue;
+		case '\f': printf("\\f");  continue;
+		case '\n': printf("\\n");  continue;
+		case '\r': printf("\\r");  continue;
+		case '\t': printf("\\t");  continue;
+		case '\\': printf("\\\\"); continue;
+		case '"':  printf("\\\""); continue;
 		}
+
+		// other characters must be explicitly escaped.
+		if (iscntrl(c)) {
+			printf("\\u%04x", c);
+			continue;
+		}
+
+		// Print other characters as-is.
+		printf("%c", (unsigned char) c); continue;
 	}
 	printf("\"");
 }
@@ -167,7 +176,6 @@ int main(int argc, char* argv[]) {
 	printf("\t\"version\": 1,\n");
 	printf("\t\"width\": 80,\n");
 	printf("\t\"height\": 24,\n");
-	printf("\t\"duration\": 1,\n"); // FIXME: total duration time.
 	printf("\t\"command\": 1,\n");
 	printf("\t\"title\": 1,\n");
 	printf("\t\"stdout\": [\n");
@@ -207,7 +215,8 @@ int main(int argc, char* argv[]) {
 
 		ttyrec_frame_free(h);
 	}
-	printf("\t]\n");
+	printf("\t],\n");
+	printf("\t\"duration\": %f\n", totaltime);
 	printf("}");
 
 	fclose(f);
