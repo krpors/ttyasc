@@ -74,7 +74,7 @@ int ttyrec_frame_read(FILE* fp, struct ttyrec_frame* f) {
 /*
  * Frees the frame, and the buffer contents.
  */
-void ttyrec_frame_free(struct ttyrec_frame* f) {
+static void ttyrec_frame_free(struct ttyrec_frame* f) {
 	if (f->buf != NULL) {
 		free(f->buf);
 		f->buf = NULL;
@@ -85,7 +85,7 @@ void ttyrec_frame_free(struct ttyrec_frame* f) {
 	}
 }
 
-void ttyrec_frame_write(const struct ttyrec_frame* f) {
+static void ttyrec_frame_write(const struct ttyrec_frame* f) {
 	printf("\t\t\t\"");
 	for (int i = 0; i < (int) f->len; i++) {
 		char c = f->buf[i];
@@ -114,7 +114,7 @@ void ttyrec_frame_write(const struct ttyrec_frame* f) {
 	printf("\"");
 }
 
-void print_help() {
+static void print_help() {
 	fprintf(stderr,
 	"usage: ttyasc [-h] filename\n"
 	"\n"
@@ -176,8 +176,8 @@ int main(int argc, char* argv[]) {
 	printf("\t\"version\": 1,\n");
 	printf("\t\"width\": 80,\n");
 	printf("\t\"height\": 24,\n");
-	printf("\t\"command\": 1,\n");
-	printf("\t\"title\": 1,\n");
+	printf("\t\"command\": null,\n");
+	printf("\t\"title\": null,\n");
 	printf("\t\"stdout\": [\n");
 	while (true) {
 		struct ttyrec_frame* h = malloc(sizeof(struct ttyrec_frame));
